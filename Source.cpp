@@ -1,107 +1,130 @@
 ﻿#pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+#pragma comment(lib,"wininet")
 
 #include <windows.h>
+#include <wininet.h>
+#include <atlconv.h>
+#include "json.hpp"
 
-#define DEFAULT_DPI 96
-#define SCALEX(X) MulDiv(X, uDpiX, DEFAULT_DPI)
-#define SCALEY(Y) MulDiv(Y, uDpiY, DEFAULT_DPI)
-#define POINT2PIXEL(PT) MulDiv(PT, uDpiY, 72)
 
-TCHAR szClassName[] = TEXT("Window");
+TCHAR szClassName[] = TEXT("postbluesky");
+using json = nlohmann::json;
 
-BOOL GetScaling(HWND hWnd, UINT* pnX, UINT* pnY)
+std::string did;
+std::string handle;
+std::string email;
+std::string accessJwt;
+std::string refreshJwt;
+
+BOOL init(IN LPCWSTR lpszID, IN LPCWSTR lpszPW)
 {
-	BOOL bSetScaling = FALSE;
-	const HMONITOR hMonitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
-	if (hMonitor)
-	{
-		HMODULE hShcore = LoadLibrary(TEXT("SHCORE"));
-		if (hShcore)
-		{
-			typedef HRESULT __stdcall GetDpiForMonitor(HMONITOR, int, UINT*, UINT*);
-			GetDpiForMonitor* fnGetDpiForMonitor = reinterpret_cast<GetDpiForMonitor*>(GetProcAddress(hShcore, "GetDpiForMonitor"));
-			if (fnGetDpiForMonitor)
-			{
-				UINT uDpiX, uDpiY;
-				if (SUCCEEDED(fnGetDpiForMonitor(hMonitor, 0, &uDpiX, &uDpiY)) && uDpiX > 0 && uDpiY > 0)
-				{
-					*pnX = uDpiX;
-					*pnY = uDpiY;
-					bSetScaling = TRUE;
+	BOOL bRet = FALSE;
+	if (lpszID != NULL && lpszPW != NULL) {
+		const HINTERNET hSession = InternetOpen(TEXT("Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/38.0.2125.111 Safari/537.36"), INTERNET_OPEN_TYPE_PRECONFIG, 0, 0, INTERNET_FLAG_NO_COOKIES);
+		if (hSession) {
+			const HINTERNET hConnection = InternetConnect(hSession, L"bsky.social", INTERNET_DEFAULT_HTTPS_PORT, 0, 0, INTERNET_SERVICE_HTTP, 0, 0);
+			if (hConnection) {
+				const HINTERNET hRequest = HttpOpenRequest(hConnection, L"POST", L"/xrpc/com.atproto.server.createSession", 0, 0, 0, INTERNET_FLAG_SECURE, 0);
+				if (hRequest) {
+					USES_CONVERSION;
+					WCHAR szHeader1[] = L"Content-Type: application/json; charset=UTF-8";
+					HttpAddRequestHeaders(hRequest, szHeader1, lstrlen(szHeader1), HTTP_ADDREQ_FLAG_REPLACE | HTTP_ADDREQ_FLAG_ADD);
+					WCHAR szHeader2[] = L"Accept: */*";
+					HttpAddRequestHeaders(hRequest, szHeader2, lstrlen(szHeader2), HTTP_ADDREQ_FLAG_REPLACE | HTTP_ADDREQ_FLAG_ADD);
+					json j;
+					j["identifier"] = W2A(lpszID);
+					j["password"] = W2A(lpszPW);
+					std::string js = j.dump();
+					if (HttpSendRequest(hRequest, 0, 0, (LPVOID)js.c_str(), (DWORD)js.size()))
+					{
+						DWORD dwStatusCode = 0;
+						DWORD dwLength = sizeof(DWORD);
+						if (HttpQueryInfo(hRequest, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &dwStatusCode, &dwLength, 0))
+						{
+							if (HTTP_STATUS_OK == dwStatusCode)
+							{
+								LPBYTE lpszReturn = 0;
+								lpszReturn = (LPBYTE)GlobalAlloc(GMEM_FIXED, 1);
+								if (lpszReturn) {
+									DWORD dwRead;
+									static BYTE szBuf[1024 * 4];
+									LPBYTE lpTmp;
+									DWORD dwSize = 0;
+									for (;;) {
+										if (!InternetReadFile(hRequest, szBuf, (DWORD)sizeof(szBuf), &dwRead) || !dwRead) break;
+										lpTmp = (LPBYTE)GlobalReAlloc(lpszReturn, (SIZE_T)(dwSize + dwRead + 1), GMEM_MOVEABLE);
+										if (lpTmp == NULL) break;
+										lpszReturn = lpTmp;
+										CopyMemory(lpszReturn + dwSize, szBuf, dwRead);
+										dwSize += dwRead;
+									}
+									if (dwSize > 0) {
+										lpszReturn[dwSize] = 0;
+										auto jss = json::parse(std::string((char*)lpszReturn));
+										accessJwt = jss["accessJwt"];
+										did = jss["did"];
+										handle = jss["handle"];
+										email = jss["email"];
+										refreshJwt = jss["refreshJwt"];
+										bRet = TRUE;
+									}
+									GlobalFree(lpszReturn);
+								}
+							}
+						}
+					}
+					InternetCloseHandle(hRequest);
 				}
+				InternetCloseHandle(hConnection);
 			}
-			FreeLibrary(hShcore);
+			InternetCloseHandle(hSession);
 		}
 	}
-	if (!bSetScaling)
-	{
-		HDC hdc = GetDC(NULL);
-		if (hdc)
-		{
-			*pnX = GetDeviceCaps(hdc, LOGPIXELSX);
-			*pnY = GetDeviceCaps(hdc, LOGPIXELSY);
-			ReleaseDC(NULL, hdc);
-			bSetScaling = TRUE;
-		}
-	}
-	if (!bSetScaling)
-	{
-		*pnX = DEFAULT_DPI;
-		*pnY = DEFAULT_DPI;
-		bSetScaling = TRUE;
-	}
-	return bSetScaling;
+	return bRet;
 }
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-	static HWND hButton;
-	static HWND hEdit;
-	static HFONT hFont;
-	static UINT uDpiX = DEFAULT_DPI, uDpiY = DEFAULT_DPI;
+	static HWND hEditID;
+	static HWND hEditPW;
+	static HWND hButtonPost;
+	static HWND hEditText;
 	switch (msg)
 	{
 	case WM_CREATE:
-		hButton = CreateWindow(TEXT("BUTTON"), TEXT("変換"), WS_VISIBLE | WS_CHILD, 0, 0, 0, 0, hWnd, (HMENU)IDOK, ((LPCREATESTRUCT)lParam)->hInstance, 0);
-		hEdit = CreateWindowEx(WS_EX_CLIENTEDGE, TEXT("EDIT"), 0, WS_VISIBLE | WS_CHILD | ES_MULTILINE | ES_AUTOHSCROLL | ES_AUTOVSCROLL, 0, 0, 0, 0, hWnd, 0, ((LPCREATESTRUCT)lParam)->hInstance, 0);
-		SendMessage(hWnd, WM_DPICHANGED, 0, 0);
+		hEditID = CreateWindowEx(WS_EX_CLIENTEDGE, TEXT("EDIT"), 0, WS_VISIBLE | WS_CHILD | ES_AUTOHSCROLL, 0, 0, 0, 0, hWnd, 0, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		hEditPW = CreateWindowEx(WS_EX_CLIENTEDGE, TEXT("EDIT"), 0, WS_VISIBLE | WS_CHILD | ES_AUTOHSCROLL, 0, 0, 0, 0, hWnd, 0, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		hEditText = CreateWindowEx(WS_EX_CLIENTEDGE, TEXT("EDIT"), 0, WS_VISIBLE | WS_CHILD | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | ES_AUTOHSCROLL | ES_AUTOVSCROLL, 0, 0, 0, 0, hWnd, 0, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		hButtonPost = CreateWindow(TEXT("BUTTON"), TEXT("投稿"), WS_VISIBLE | WS_CHILD, 0, 0, 0, 0, hWnd, (HMENU)IDOK, ((LPCREATESTRUCT)lParam)->hInstance, 0);
 		break;
 	case WM_SIZE:
-		MoveWindow(hButton, POINT2PIXEL(10), POINT2PIXEL(10), POINT2PIXEL(256), POINT2PIXEL(32), TRUE);
-		MoveWindow(hEdit, POINT2PIXEL(10), POINT2PIXEL(50), LOWORD(lParam) - POINT2PIXEL(20), HIWORD(lParam) - POINT2PIXEL(60), TRUE);
+		MoveWindow(hEditID, (10), (10), LOWORD(lParam) - (20), 32, TRUE);
+		MoveWindow(hEditPW, (10), (50), LOWORD(lParam) - (20), 32, TRUE);
+		MoveWindow(hEditText, (10), (90), LOWORD(lParam) - (20), HIWORD(lParam) - (90 + 32 + 20), TRUE);
+		MoveWindow(hButtonPost, (10), HIWORD(lParam) - (32 + 10), (256), (32), TRUE);
 		break;
 	case WM_COMMAND:
 		if (LOWORD(wParam) == IDOK)
 		{
-			SetWindowText(hEdit, 0);
-			TCHAR szText[1024];
-			wsprintf(szText, TEXT("%d"), GetTickCount());
-			SendMessage(hEdit, EM_REPLACESEL, 0, (LPARAM)szText);
+			WCHAR lpszID[1024];
+			WCHAR lpszPW[1024];
+			GetWindowText(hEditID, lpszID, _countof(lpszID));
+			GetWindowText(hEditPW, lpszPW, _countof(lpszPW));
+			lstrcat(lpszID, L".bsky.social");
+			init(lpszID, lpszPW);			
+			SendMessageA(hEditText, EM_REPLACESEL, 0, (LPARAM)did.c_str());
+			SendMessageA(hEditText, EM_REPLACESEL, 0, (LPARAM)"\r\n");
+			SendMessageA(hEditText, EM_REPLACESEL, 0, (LPARAM)handle.c_str());
+			SendMessageA(hEditText, EM_REPLACESEL, 0, (LPARAM)"\r\n");
+			SendMessageA(hEditText, EM_REPLACESEL, 0, (LPARAM)email.c_str());
+			SendMessageA(hEditText, EM_REPLACESEL, 0, (LPARAM)"\r\n");
+			SendMessageA(hEditText, EM_REPLACESEL, 0, (LPARAM)accessJwt.c_str());
+			SendMessageA(hEditText, EM_REPLACESEL, 0, (LPARAM)"\r\n");
+			SendMessageA(hEditText, EM_REPLACESEL, 0, (LPARAM)refreshJwt.c_str());
+			SendMessageA(hEditText, EM_REPLACESEL, 0, (LPARAM)"\r\n");
 		}
-		break;
-	case WM_NCCREATE:
-		{
-			const HMODULE hModUser32 = GetModuleHandle(TEXT("user32.dll"));
-			if (hModUser32)
-			{
-				typedef BOOL(WINAPI*fnTypeEnableNCScaling)(HWND);
-				const fnTypeEnableNCScaling fnEnableNCScaling = (fnTypeEnableNCScaling)GetProcAddress(hModUser32, "EnableNonClientDpiScaling");
-				if (fnEnableNCScaling)
-				{
-					fnEnableNCScaling(hWnd);
-				}
-			}
-		}
-		return DefWindowProc(hWnd, msg, wParam, lParam);
-	case WM_DPICHANGED:
-		GetScaling(hWnd, &uDpiX, &uDpiY);
-		DeleteObject(hFont);
-		hFont = CreateFontW(-POINT2PIXEL(10), 0, 0, 0, FW_NORMAL, 0, 0, 0, SHIFTJIS_CHARSET, 0, 0, 0, 0, L"MS Shell Dlg");
-		SendMessage(hButton, WM_SETFONT, (WPARAM)hFont, 0);
-		SendMessage(hEdit, WM_SETFONT, (WPARAM)hFont, 0);
 		break;
 	case WM_DESTROY:
-		DeleteObject(hFont);
 		PostQuitMessage(0);
 		break;
 	default:
@@ -110,7 +133,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	return 0;
 }
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPreInst, LPSTR pCmdLine, int nCmdShow)
+int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPreInst, LPWSTR pCmdLine, int nCmdShow)
 {
 	MSG msg;
 	WNDCLASS wndclass = {
@@ -128,7 +151,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPreInst, LPSTR pCmdLine, int 
 	RegisterClass(&wndclass);
 	HWND hWnd = CreateWindow(
 		szClassName,
-		TEXT("Window"),
+		TEXT("blueskyにポスト"),
 		WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
 		CW_USEDEFAULT,
 		0,
