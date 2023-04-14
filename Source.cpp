@@ -83,6 +83,76 @@ BOOL init(IN LPCWSTR lpszID, IN LPCWSTR lpszPW)
 	return bRet;
 }
 
+BOOL post(LPCWSTR lpszMessage) 
+{
+	BOOL bRet = FALSE;
+	if (lpszMessage != NULL) {
+		const HINTERNET hSession = InternetOpen(TEXT("Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/38.0.2125.111 Safari/537.36"), INTERNET_OPEN_TYPE_PRECONFIG, 0, 0, INTERNET_FLAG_NO_COOKIES);
+		if (hSession) {
+			const HINTERNET hConnection = InternetConnect(hSession, L"bsky.social", INTERNET_DEFAULT_HTTPS_PORT, 0, 0, INTERNET_SERVICE_HTTP, 0, 0);
+			if (hConnection) {
+				const HINTERNET hRequest = HttpOpenRequest(hConnection, L"POST", L"/xrpc/com.atproto.repo.createRecord", 0, 0, 0, INTERNET_FLAG_SECURE, 0);
+				if (hRequest) {
+					USES_CONVERSION;
+					WCHAR szHeader1[] = L"Content-Type: application/json; charset=UTF-8";
+					HttpAddRequestHeaders(hRequest, szHeader1, lstrlen(szHeader1), HTTP_ADDREQ_FLAG_REPLACE | HTTP_ADDREQ_FLAG_ADD);
+					WCHAR szHeader2[] = L"Accept: */*";
+					HttpAddRequestHeaders(hRequest, szHeader2, lstrlen(szHeader2), HTTP_ADDREQ_FLAG_REPLACE | HTTP_ADDREQ_FLAG_ADD);
+					WCHAR szHeader3[1024];
+					wsprintf(szHeader3, L"Authorization: Bearer %s", A2W(accessJwt.c_str()));
+					HttpAddRequestHeaders(hRequest, szHeader3, lstrlen(szHeader3), HTTP_ADDREQ_FLAG_REPLACE | HTTP_ADDREQ_FLAG_ADD);
+
+					// TODO この辺の作り方が多分たりてない。
+					json j1;
+					json j2;
+					j2["text"] = W2A(lpszMessage);
+					j1["collection"] = "app.bsky.feed.post";
+					j1["record"] = j2;
+
+					std::string js = j1.dump();
+					if (HttpSendRequest(hRequest, 0, 0, (LPVOID)js.c_str(), (DWORD)js.size()))
+					{
+						DWORD dwStatusCode = 0;
+						DWORD dwLength = sizeof(DWORD);
+						if (HttpQueryInfo(hRequest, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &dwStatusCode, &dwLength, 0))
+						{
+							if (HTTP_STATUS_OK == dwStatusCode)
+							{
+								LPBYTE lpszReturn = 0;
+								lpszReturn = (LPBYTE)GlobalAlloc(GMEM_FIXED, 1);
+								if (lpszReturn) {
+									DWORD dwRead;
+									static BYTE szBuf[1024 * 4];
+									LPBYTE lpTmp;
+									DWORD dwSize = 0;
+									for (;;) {
+										if (!InternetReadFile(hRequest, szBuf, (DWORD)sizeof(szBuf), &dwRead) || !dwRead) break;
+										lpTmp = (LPBYTE)GlobalReAlloc(lpszReturn, (SIZE_T)(dwSize + dwRead + 1), GMEM_MOVEABLE);
+										if (lpTmp == NULL) break;
+										lpszReturn = lpTmp;
+										CopyMemory(lpszReturn + dwSize, szBuf, dwRead);
+										dwSize += dwRead;
+									}
+									if (dwSize > 0) {
+										lpszReturn[dwSize] = 0;
+										auto jss = json::parse(std::string((char*)lpszReturn));
+										bRet = TRUE;
+									}
+									GlobalFree(lpszReturn);
+								}
+							}
+						}
+					}
+					InternetCloseHandle(hRequest);
+				}
+				InternetCloseHandle(hConnection);
+			}
+			InternetCloseHandle(hSession);
+		}
+	}
+	return bRet;
+}
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	static HWND hEditID;
@@ -111,7 +181,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			GetWindowText(hEditID, lpszID, _countof(lpszID));
 			GetWindowText(hEditPW, lpszPW, _countof(lpszPW));
 			lstrcat(lpszID, L".bsky.social");
-			init(lpszID, lpszPW);			
+			if (init(lpszID, lpszPW)) {
+				DWORD dwSize = GetWindowTextLength(hEditText);
+				LPWSTR lpszMessage = (LPWSTR)GlobalAlloc(0, sizeof(WCHAR) * (dwSize + 1));
+				GetWindowText(hEditText, lpszMessage, dwSize + 1);
+				post(lpszMessage);
+				GlobalFree(lpszMessage);
+			}
 			SendMessageA(hEditText, EM_REPLACESEL, 0, (LPARAM)did.c_str());
 			SendMessageA(hEditText, EM_REPLACESEL, 0, (LPARAM)"\r\n");
 			SendMessageA(hEditText, EM_REPLACESEL, 0, (LPARAM)handle.c_str());
