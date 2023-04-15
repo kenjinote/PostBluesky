@@ -162,9 +162,11 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="atproto.cpp" />
     <ClCompile Include="Source.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="atproto.h" />
     <ClInclude Include="json.hpp" />
     <ClInclude Include="resource.h" />
   </ItemGroup>
