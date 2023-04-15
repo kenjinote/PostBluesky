@@ -111,11 +111,9 @@ BOOL post(LPCWSTR lpszMessage)
 	BOOL bRet = FALSE;
 	json json1;
 	json child;
-	child["$type"] = "app.bsky.feed.post";
 	child["text"] = W2A_CP(lpszMessage, CP_UTF8);
-	child["createdAt"] = std::format("{:%FT%TZ}", system_clock::now());
+	//child["createdAt"] = std::format("{:%FT%TZ}", system_clock::now());
 	json1["collection"] = "app.bsky.feed.post";
-	json1["$type"] = "app.bsky.feed.post";
 	json1["repo"] = did;
 	json1["record"] = child;
 	LPBYTE lpszByte = post_api(L"/xrpc/com.atproto.repo.createRecord", json1);
