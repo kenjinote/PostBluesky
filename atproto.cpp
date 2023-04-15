@@ -57,7 +57,7 @@ LPBYTE atproto::post_api(LPCWSTR lpszUri, json& data)
 	return lpszRet;
 }
 
-BOOL atproto::init(IN LPCWSTR lpszID, IN LPCWSTR lpszPW)
+BOOL atproto::createSession(IN LPCWSTR lpszID, IN LPCWSTR lpszPW)
 {
 	if (lpszID == NULL || lpszPW == NULL) return FALSE;
 	USES_CONVERSION;
@@ -79,7 +79,7 @@ BOOL atproto::init(IN LPCWSTR lpszID, IN LPCWSTR lpszPW)
 	return bRet;
 }
 
-BOOL atproto::post(LPCWSTR lpszMessage)
+BOOL atproto::createRecord(LPCWSTR lpszMessage)
 {
 	if (lpszMessage == NULL) return FALSE;
 	USES_CONVERSION;

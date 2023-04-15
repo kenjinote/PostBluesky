@@ -164,11 +164,13 @@
   <ItemGroup>
     <ClCompile Include="atproto.cpp" />
     <ClCompile Include="Source.cpp" />
+    <ClCompile Include="util.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="atproto.h" />
     <ClInclude Include="json.hpp" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="util.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="postbulesky.rc" />

@@ -22,7 +22,7 @@ class atproto
 	LPBYTE post_api(LPCWSTR lpszUri, json& data);
 
 public:
-	BOOL init(IN LPCWSTR lpszID, IN LPCWSTR lpszPW);
-	BOOL post(LPCWSTR lpszMessage);
+	BOOL createSession(IN LPCWSTR lpszID, IN LPCWSTR lpszPW);
+	BOOL createRecord(LPCWSTR lpszMessage);
 };
 

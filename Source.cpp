@@ -9,6 +9,7 @@
 #include <format>
 #include "json.hpp"
 #include "atproto.h"
+#include "util.h"
 #include "resource.h"
 
 TCHAR szClassName[] = TEXT("postbluesky");
@@ -43,14 +44,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			WCHAR lpszPW[1024];
 			GetWindowText(hEditID, lpszID, _countof(lpszID));
 			GetWindowText(hEditPW, lpszPW, _countof(lpszPW));
-			lstrcat(lpszID, L".bsky.social");
-			if (at.init(lpszID, lpszPW)) {
+			if (util::StrFindChar(lpszID, L'.') == FALSE) {
+				lstrcat(lpszID, L".bsky.social");
+			}
+			if (at.createSession(lpszID, lpszPW)) {
 				DWORD dwSize = GetWindowTextLength(hEditText);
 				LPWSTR lpszMessage = (LPWSTR)GlobalAlloc(0, sizeof(WCHAR) * (dwSize + 1));
 				if (lpszMessage) {
 					GetWindowText(hEditText, lpszMessage, dwSize + 1);
-					if (at.post(lpszMessage)) {
-						MessageBox(hWnd, L"投稿成功", L"確認", 0);
+					if (at.createRecord(lpszMessage)) {
+						MessageBox(hWnd, L"投稿しました！", L"確認", 0);
 					}
 					GlobalFree(lpszMessage);
 				}
@@ -91,8 +94,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
 		CW_USEDEFAULT,
 		0,
-		CW_USEDEFAULT,
-		0,
+		512,
+		512,
 		0,
 		0,
 		hInstance,
