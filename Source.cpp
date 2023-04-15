@@ -2,13 +2,19 @@
 #pragma comment(lib,"wininet")
 
 #include <windows.h>
+#include <commctrl.h>
 #include <wininet.h>
 #include <atlconv.h>
+
+#include <chrono>
+#include <format>
+
 #include "json.hpp"
 #include "resource.h"
 
 TCHAR szClassName[] = TEXT("postbluesky");
 using json = nlohmann::json;
+using namespace std::chrono;
 
 std::string did;
 std::string handle;
@@ -16,26 +22,28 @@ std::string email;
 std::string accessJwt;
 std::string refreshJwt;
 
-BOOL init(IN LPCWSTR lpszID, IN LPCWSTR lpszPW)
+LPBYTE post_api(LPCWSTR lpszUri, json& data)
 {
-	BOOL bRet = FALSE;
-	if (lpszID != NULL && lpszPW != NULL) {
-		const HINTERNET hSession = InternetOpen(TEXT("Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/38.0.2125.111 Safari/537.36"), INTERNET_OPEN_TYPE_PRECONFIG, 0, 0, INTERNET_FLAG_NO_COOKIES);
+	LPBYTE lpszRet = NULL;
+	if (lpszUri != NULL) {
+		const HINTERNET hSession = InternetOpen(0, INTERNET_OPEN_TYPE_PRECONFIG, 0, 0, INTERNET_FLAG_NO_COOKIES);
 		if (hSession) {
 			const HINTERNET hConnection = InternetConnect(hSession, L"bsky.social", INTERNET_DEFAULT_HTTPS_PORT, 0, 0, INTERNET_SERVICE_HTTP, 0, 0);
 			if (hConnection) {
-				const HINTERNET hRequest = HttpOpenRequest(hConnection, L"POST", L"/xrpc/com.atproto.server.createSession", 0, 0, 0, INTERNET_FLAG_SECURE, 0);
+				const HINTERNET hRequest = HttpOpenRequest(hConnection, L"POST", lpszUri, 0, 0, 0, INTERNET_FLAG_SECURE, 0);
 				if (hRequest) {
 					USES_CONVERSION;
 					WCHAR szHeader1[] = L"Content-Type: application/json; charset=UTF-8";
 					HttpAddRequestHeaders(hRequest, szHeader1, lstrlen(szHeader1), HTTP_ADDREQ_FLAG_REPLACE | HTTP_ADDREQ_FLAG_ADD);
 					WCHAR szHeader2[] = L"Accept: */*";
 					HttpAddRequestHeaders(hRequest, szHeader2, lstrlen(szHeader2), HTTP_ADDREQ_FLAG_REPLACE | HTTP_ADDREQ_FLAG_ADD);
-					json j;
-					j["identifier"] = W2A(lpszID);
-					j["password"] = W2A(lpszPW);
-					std::string js = j.dump();
-					if (HttpSendRequest(hRequest, 0, 0, (LPVOID)js.c_str(), (DWORD)js.size()))
+					if (accessJwt.size() > 0) {
+						WCHAR szHeader3[1024];
+						wsprintf(szHeader3, L"Authorization: Bearer %s", A2W(accessJwt.c_str()));
+						HttpAddRequestHeaders(hRequest, szHeader3, lstrlen(szHeader3), HTTP_ADDREQ_FLAG_REPLACE | HTTP_ADDREQ_FLAG_ADD);
+					}
+					auto data_string = data.dump();
+					if (HttpSendRequest(hRequest, 0, 0, (LPVOID)data_string.c_str(), (DWORD)data_string.size()))
 					{
 						DWORD dwStatusCode = 0;
 						DWORD dwLength = sizeof(DWORD);
@@ -43,32 +51,23 @@ BOOL init(IN LPCWSTR lpszID, IN LPCWSTR lpszPW)
 						{
 							if (HTTP_STATUS_OK == dwStatusCode)
 							{
-								LPBYTE lpszReturn = 0;
-								lpszReturn = (LPBYTE)GlobalAlloc(GMEM_FIXED, 1);
-								if (lpszReturn) {
+								lpszRet = (LPBYTE)GlobalAlloc(GMEM_FIXED, 1);
+								if (lpszRet) {
 									DWORD dwRead;
 									static BYTE szBuf[1024 * 4];
 									LPBYTE lpTmp;
 									DWORD dwSize = 0;
 									for (;;) {
 										if (!InternetReadFile(hRequest, szBuf, (DWORD)sizeof(szBuf), &dwRead) || !dwRead) break;
-										lpTmp = (LPBYTE)GlobalReAlloc(lpszReturn, (SIZE_T)(dwSize + dwRead + 1), GMEM_MOVEABLE);
+										lpTmp = (LPBYTE)GlobalReAlloc(lpszRet, (SIZE_T)(dwSize + dwRead + 1), GMEM_MOVEABLE);
 										if (lpTmp == NULL) break;
-										lpszReturn = lpTmp;
-										CopyMemory(lpszReturn + dwSize, szBuf, dwRead);
+										lpszRet = lpTmp;
+										CopyMemory(lpszRet + dwSize, szBuf, dwRead);
 										dwSize += dwRead;
 									}
 									if (dwSize > 0) {
-										lpszReturn[dwSize] = 0;
-										auto jss = json::parse(std::string((char*)lpszReturn));
-										accessJwt = jss["accessJwt"];
-										did = jss["did"];
-										handle = jss["handle"];
-										email = jss["email"];
-										refreshJwt = jss["refreshJwt"];
-										bRet = TRUE;
+										lpszRet[dwSize] = 0;
 									}
-									GlobalFree(lpszReturn);
 								}
 							}
 						}
@@ -80,75 +79,50 @@ BOOL init(IN LPCWSTR lpszID, IN LPCWSTR lpszPW)
 			InternetCloseHandle(hSession);
 		}
 	}
+	return lpszRet;
+}
+
+BOOL init(IN LPCWSTR lpszID, IN LPCWSTR lpszPW)
+{
+	if (lpszID == NULL || lpszPW == NULL) return FALSE;
+	USES_CONVERSION;
+	BOOL bRet = FALSE;
+	json json1;
+	json1["identifier"] = W2A(lpszID);
+	json1["password"] = W2A(lpszPW);
+	LPBYTE lpszByte = post_api(L"/xrpc/com.atproto.server.createSession", json1);
+	if (lpszByte) {
+		auto json1 = json::parse(std::string((char*)lpszByte));
+		GlobalFree(lpszByte);
+		accessJwt = json1["accessJwt"];
+		did = json1["did"];
+		handle = json1["handle"];
+		email = json1["email"];
+		refreshJwt = json1["refreshJwt"];
+		bRet = TRUE;
+	}
 	return bRet;
 }
 
-BOOL post(LPCWSTR lpszMessage) 
+BOOL post(LPCWSTR lpszMessage)
 {
+	if (lpszMessage == NULL) return FALSE;
+	USES_CONVERSION;
 	BOOL bRet = FALSE;
-	if (lpszMessage != NULL) {
-		const HINTERNET hSession = InternetOpen(TEXT("Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/38.0.2125.111 Safari/537.36"), INTERNET_OPEN_TYPE_PRECONFIG, 0, 0, INTERNET_FLAG_NO_COOKIES);
-		if (hSession) {
-			const HINTERNET hConnection = InternetConnect(hSession, L"bsky.social", INTERNET_DEFAULT_HTTPS_PORT, 0, 0, INTERNET_SERVICE_HTTP, 0, 0);
-			if (hConnection) {
-				const HINTERNET hRequest = HttpOpenRequest(hConnection, L"POST", L"/xrpc/com.atproto.repo.createRecord", 0, 0, 0, INTERNET_FLAG_SECURE, 0);
-				if (hRequest) {
-					USES_CONVERSION;
-					WCHAR szHeader1[] = L"Content-Type: application/json; charset=UTF-8";
-					HttpAddRequestHeaders(hRequest, szHeader1, lstrlen(szHeader1), HTTP_ADDREQ_FLAG_REPLACE | HTTP_ADDREQ_FLAG_ADD);
-					WCHAR szHeader2[] = L"Accept: */*";
-					HttpAddRequestHeaders(hRequest, szHeader2, lstrlen(szHeader2), HTTP_ADDREQ_FLAG_REPLACE | HTTP_ADDREQ_FLAG_ADD);
-					WCHAR szHeader3[1024];
-					wsprintf(szHeader3, L"Authorization: Bearer %s", A2W(accessJwt.c_str()));
-					HttpAddRequestHeaders(hRequest, szHeader3, lstrlen(szHeader3), HTTP_ADDREQ_FLAG_REPLACE | HTTP_ADDREQ_FLAG_ADD);
-
-					// TODO この辺の作り方が多分たりてない。
-					json j1;
-					json j2;
-					j2["text"] = W2A(lpszMessage);
-					j1["collection"] = "app.bsky.feed.post";
-					j1["record"] = j2;
-
-					std::string js = j1.dump();
-					if (HttpSendRequest(hRequest, 0, 0, (LPVOID)js.c_str(), (DWORD)js.size()))
-					{
-						DWORD dwStatusCode = 0;
-						DWORD dwLength = sizeof(DWORD);
-						if (HttpQueryInfo(hRequest, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &dwStatusCode, &dwLength, 0))
-						{
-							if (HTTP_STATUS_OK == dwStatusCode)
-							{
-								LPBYTE lpszReturn = 0;
-								lpszReturn = (LPBYTE)GlobalAlloc(GMEM_FIXED, 1);
-								if (lpszReturn) {
-									DWORD dwRead;
-									static BYTE szBuf[1024 * 4];
-									LPBYTE lpTmp;
-									DWORD dwSize = 0;
-									for (;;) {
-										if (!InternetReadFile(hRequest, szBuf, (DWORD)sizeof(szBuf), &dwRead) || !dwRead) break;
-										lpTmp = (LPBYTE)GlobalReAlloc(lpszReturn, (SIZE_T)(dwSize + dwRead + 1), GMEM_MOVEABLE);
-										if (lpTmp == NULL) break;
-										lpszReturn = lpTmp;
-										CopyMemory(lpszReturn + dwSize, szBuf, dwRead);
-										dwSize += dwRead;
-									}
-									if (dwSize > 0) {
-										lpszReturn[dwSize] = 0;
-										auto jss = json::parse(std::string((char*)lpszReturn));
-										bRet = TRUE;
-									}
-									GlobalFree(lpszReturn);
-								}
-							}
-						}
-					}
-					InternetCloseHandle(hRequest);
-				}
-				InternetCloseHandle(hConnection);
-			}
-			InternetCloseHandle(hSession);
-		}
+	json json1;
+	json child;
+	child["$type"] = "app.bsky.feed.post";
+	child["text"] = W2A_CP(lpszMessage, CP_UTF8);
+	child["createdAt"] = std::format("{:%FT%TZ}", system_clock::now());
+	json1["collection"] = "app.bsky.feed.post";
+	json1["$type"] = "app.bsky.feed.post";
+	json1["repo"] = did;
+	json1["record"] = child;
+	LPBYTE lpszByte = post_api(L"/xrpc/com.atproto.repo.createRecord", json1);
+	if (lpszByte) {
+		auto json1 = json::parse(std::string((char*)lpszByte));
+		GlobalFree(lpszByte);
+		bRet = TRUE;
 	}
 	return bRet;
 }
@@ -162,16 +136,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	switch (msg)
 	{
 	case WM_CREATE:
-		hEditID = CreateWindowEx(WS_EX_CLIENTEDGE, TEXT("EDIT"), 0, WS_VISIBLE | WS_CHILD | ES_AUTOHSCROLL, 0, 0, 0, 0, hWnd, 0, ((LPCREATESTRUCT)lParam)->hInstance, 0);
-		hEditPW = CreateWindowEx(WS_EX_CLIENTEDGE, TEXT("EDIT"), 0, WS_VISIBLE | WS_CHILD | ES_AUTOHSCROLL, 0, 0, 0, 0, hWnd, 0, ((LPCREATESTRUCT)lParam)->hInstance, 0);
-		hEditText = CreateWindowEx(WS_EX_CLIENTEDGE, TEXT("EDIT"), 0, WS_VISIBLE | WS_CHILD | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | ES_AUTOHSCROLL | ES_AUTOVSCROLL, 0, 0, 0, 0, hWnd, 0, ((LPCREATESTRUCT)lParam)->hInstance, 0);
-		hButtonPost = CreateWindow(TEXT("BUTTON"), TEXT("投稿"), WS_VISIBLE | WS_CHILD, 0, 0, 0, 0, hWnd, (HMENU)IDOK, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		hEditID = CreateWindowEx(WS_EX_CLIENTEDGE, TEXT("EDIT"), L"", WS_VISIBLE | WS_CHILD | WS_TABSTOP | ES_AUTOHSCROLL, 0, 0, 0, 0, hWnd, 0, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		SendMessage(hEditID, EM_SETCUEBANNER, TRUE, (LPARAM)L"ID");
+		hEditPW = CreateWindowEx(WS_EX_CLIENTEDGE, TEXT("EDIT"), L"", WS_VISIBLE | WS_CHILD | WS_TABSTOP | ES_AUTOHSCROLL, 0, 0, 0, 0, hWnd, 0, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		SendMessage(hEditPW, EM_SETCUEBANNER, TRUE, (LPARAM)L"Password");
+		hEditText = CreateWindowEx(WS_EX_CLIENTEDGE, TEXT("EDIT"), L"", WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | ES_AUTOHSCROLL | ES_AUTOVSCROLL, 0, 0, 0, 0, hWnd, 0, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		hButtonPost = CreateWindow(TEXT("BUTTON"), TEXT("投稿"), WS_VISIBLE | WS_CHILD | WS_TABSTOP, 0, 0, 0, 0, hWnd, (HMENU)IDOK, ((LPCREATESTRUCT)lParam)->hInstance, 0);
 		break;
 	case WM_SIZE:
-		MoveWindow(hEditID, (10), (10), LOWORD(lParam) - (20), 32, TRUE);
-		MoveWindow(hEditPW, (10), (50), LOWORD(lParam) - (20), 32, TRUE);
-		MoveWindow(hEditText, (10), (90), LOWORD(lParam) - (20), HIWORD(lParam) - (90 + 32 + 20), TRUE);
-		MoveWindow(hButtonPost, (10), HIWORD(lParam) - (32 + 10), (256), (32), TRUE);
+		MoveWindow(hEditID, 10, 10, LOWORD(lParam) - 20, 32, TRUE);
+		MoveWindow(hEditPW, 10, 50, LOWORD(lParam) - 20, 32, TRUE);
+		MoveWindow(hEditText, 10, 90, LOWORD(lParam) - 20, HIWORD(lParam) - (90 + 32 + 20), TRUE);
+		MoveWindow(hButtonPost, 10, HIWORD(lParam) - (32 + 10), 256, 32, TRUE);
 		break;
 	case WM_COMMAND:
 		if (LOWORD(wParam) == IDOK)
@@ -184,43 +160,40 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			if (init(lpszID, lpszPW)) {
 				DWORD dwSize = GetWindowTextLength(hEditText);
 				LPWSTR lpszMessage = (LPWSTR)GlobalAlloc(0, sizeof(WCHAR) * (dwSize + 1));
-				GetWindowText(hEditText, lpszMessage, dwSize + 1);
-				post(lpszMessage);
-				GlobalFree(lpszMessage);
+				if (lpszMessage) {
+					GetWindowText(hEditText, lpszMessage, dwSize + 1);
+					if (post(lpszMessage)) {
+						MessageBox(hWnd, L"投稿成功", L"確認", 0);
+					}
+					GlobalFree(lpszMessage);
+				}
 			}
-			SendMessageA(hEditText, EM_REPLACESEL, 0, (LPARAM)did.c_str());
-			SendMessageA(hEditText, EM_REPLACESEL, 0, (LPARAM)"\r\n");
-			SendMessageA(hEditText, EM_REPLACESEL, 0, (LPARAM)handle.c_str());
-			SendMessageA(hEditText, EM_REPLACESEL, 0, (LPARAM)"\r\n");
-			SendMessageA(hEditText, EM_REPLACESEL, 0, (LPARAM)email.c_str());
-			SendMessageA(hEditText, EM_REPLACESEL, 0, (LPARAM)"\r\n");
-			SendMessageA(hEditText, EM_REPLACESEL, 0, (LPARAM)accessJwt.c_str());
-			SendMessageA(hEditText, EM_REPLACESEL, 0, (LPARAM)"\r\n");
-			SendMessageA(hEditText, EM_REPLACESEL, 0, (LPARAM)refreshJwt.c_str());
-			SendMessageA(hEditText, EM_REPLACESEL, 0, (LPARAM)"\r\n");
 		}
+		break;
+	case WM_CLOSE:
+		DestroyWindow(hWnd);
 		break;
 	case WM_DESTROY:
 		PostQuitMessage(0);
 		break;
 	default:
-		return DefWindowProc(hWnd, msg, wParam, lParam);
+		return DefDlgProc(hWnd, msg, wParam, lParam);
 	}
 	return 0;
 }
 
-int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPreInst, LPWSTR pCmdLine, int nCmdShow)
+int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nShowCmd)
 {
 	MSG msg;
 	WNDCLASS wndclass = {
-		CS_HREDRAW | CS_VREDRAW,
+		0,
 		WndProc,
 		0,
-		0,
+		DLGWINDOWEXTRA,
 		hInstance,
 		LoadIcon(hInstance, MAKEINTRESOURCE(IDI_ICON1)),
 		LoadCursor(0,IDC_ARROW),
-		(HBRUSH)(COLOR_WINDOW + 1),
+		0,
 		0,
 		szClassName
 	};
@@ -242,8 +215,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPreInst, LPWSTR pCmdLine, in
 	UpdateWindow(hWnd);
 	while (GetMessage(&msg, 0, 0, 0))
 	{
-		TranslateMessage(&msg);
-		DispatchMessage(&msg);
+		if (!IsDialogMessage(hWnd, &msg))
+		{
+			TranslateMessage(&msg);
+			DispatchMessage(&msg);
+		}
 	}
 	return (int)msg.wParam;
 }
