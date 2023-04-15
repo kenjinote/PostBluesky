@@ -5,10 +5,8 @@
 #include <commctrl.h>
 #include <wininet.h>
 #include <atlconv.h>
-
 #include <chrono>
 #include <format>
-
 #include "json.hpp"
 #include "resource.h"
 
@@ -43,14 +41,11 @@ LPBYTE post_api(LPCWSTR lpszUri, json& data)
 						HttpAddRequestHeaders(hRequest, szHeader3, lstrlen(szHeader3), HTTP_ADDREQ_FLAG_REPLACE | HTTP_ADDREQ_FLAG_ADD);
 					}
 					auto data_string = data.dump();
-					if (HttpSendRequest(hRequest, 0, 0, (LPVOID)data_string.c_str(), (DWORD)data_string.size()))
-					{
+					if (HttpSendRequest(hRequest, 0, 0, (LPVOID)data_string.c_str(), (DWORD)data_string.size())) {
 						DWORD dwStatusCode = 0;
 						DWORD dwLength = sizeof(DWORD);
-						if (HttpQueryInfo(hRequest, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &dwStatusCode, &dwLength, 0))
-						{
-							if (HTTP_STATUS_OK == dwStatusCode)
-							{
+						if (HttpQueryInfo(hRequest, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &dwStatusCode, &dwLength, 0)) {
+							if (HTTP_STATUS_OK == dwStatusCode) {
 								lpszRet = (LPBYTE)GlobalAlloc(GMEM_FIXED, 1);
 								if (lpszRet) {
 									DWORD dwRead;
