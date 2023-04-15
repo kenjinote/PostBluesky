@@ -32,12 +32,12 @@ LPBYTE post_api(LPCWSTR lpszUri, json& data)
 			if (hConnection) {
 				const HINTERNET hRequest = HttpOpenRequest(hConnection, L"POST", lpszUri, 0, 0, 0, INTERNET_FLAG_SECURE, 0);
 				if (hRequest) {
-					USES_CONVERSION;
 					WCHAR szHeader1[] = L"Content-Type: application/json; charset=UTF-8";
 					HttpAddRequestHeaders(hRequest, szHeader1, lstrlen(szHeader1), HTTP_ADDREQ_FLAG_REPLACE | HTTP_ADDREQ_FLAG_ADD);
 					WCHAR szHeader2[] = L"Accept: */*";
 					HttpAddRequestHeaders(hRequest, szHeader2, lstrlen(szHeader2), HTTP_ADDREQ_FLAG_REPLACE | HTTP_ADDREQ_FLAG_ADD);
 					if (accessJwt.size() > 0) {
+						USES_CONVERSION;
 						WCHAR szHeader3[1024];
 						wsprintf(szHeader3, L"Authorization: Bearer %s", A2W(accessJwt.c_str()));
 						HttpAddRequestHeaders(hRequest, szHeader3, lstrlen(szHeader3), HTTP_ADDREQ_FLAG_REPLACE | HTTP_ADDREQ_FLAG_ADD);
@@ -112,7 +112,7 @@ BOOL post(LPCWSTR lpszMessage)
 	json json1;
 	json child;
 	child["text"] = W2A_CP(lpszMessage, CP_UTF8);
-	//child["createdAt"] = std::format("{:%FT%TZ}", system_clock::now());
+	child["createdAt"] = std::format("{:%FT%TZ}", system_clock::now());
 	json1["collection"] = "app.bsky.feed.post";
 	json1["repo"] = did;
 	json1["record"] = child;
