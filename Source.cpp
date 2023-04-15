@@ -25,7 +25,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	case WM_CREATE:
 		hEditID = CreateWindowEx(WS_EX_CLIENTEDGE, TEXT("EDIT"), L"", WS_VISIBLE | WS_CHILD | WS_TABSTOP | ES_AUTOHSCROLL, 0, 0, 0, 0, hWnd, 0, ((LPCREATESTRUCT)lParam)->hInstance, 0);
 		SendMessage(hEditID, EM_SETCUEBANNER, TRUE, (LPARAM)L"ID");
-		hEditPW = CreateWindowEx(WS_EX_CLIENTEDGE, TEXT("EDIT"), L"", WS_VISIBLE | WS_CHILD | WS_TABSTOP | ES_AUTOHSCROLL, 0, 0, 0, 0, hWnd, 0, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		hEditPW = CreateWindowEx(WS_EX_CLIENTEDGE, TEXT("EDIT"), L"", WS_VISIBLE | WS_CHILD | WS_TABSTOP | ES_AUTOHSCROLL | ES_PASSWORD, 0, 0, 0, 0, hWnd, 0, ((LPCREATESTRUCT)lParam)->hInstance, 0);
 		SendMessage(hEditPW, EM_SETCUEBANNER, TRUE, (LPARAM)L"Password");
 		hEditText = CreateWindowEx(WS_EX_CLIENTEDGE, TEXT("EDIT"), L"", WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | ES_AUTOHSCROLL | ES_AUTOVSCROLL, 0, 0, 0, 0, hWnd, 0, ((LPCREATESTRUCT)lParam)->hInstance, 0);
 		hButtonPost = CreateWindow(TEXT("BUTTON"), TEXT("投稿"), WS_VISIBLE | WS_CHILD | WS_TABSTOP, 0, 0, 0, 0, hWnd, (HMENU)IDOK, ((LPCREATESTRUCT)lParam)->hInstance, 0);
