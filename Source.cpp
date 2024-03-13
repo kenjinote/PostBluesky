@@ -12,7 +12,7 @@
 #include "util.h"
 #include "resource.h"
 
-TCHAR szClassName[] = TEXT("postbluesky");
+TCHAR szClassName[] = TEXT("PostBluesky");
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {

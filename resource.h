@@ -1,6 +1,6 @@
 //{{NO_DEPENDENCIES}}
 // Microsoft Visual C++ で生成されたインクルード ファイル。
-// postbulesky.rc で使用
+// PostBluesky.rc で使用
 //
 #define IDI_ICON1                       101
 
